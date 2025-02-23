@@ -1,3 +1,9 @@
 spring:
   application:
-  name: PraktikTgBot
+    name: PraktikTgBot
+telegram:
+  token: 7574738019:AAEC38YXjPHshPDi1tMbbHdoEksb6AHbhNo
+  username: GPTTelegram_Practika_Bot
+api:
+  apiKey: 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
+  apiUrl: https://api.openai.com/v1/chat/completions
