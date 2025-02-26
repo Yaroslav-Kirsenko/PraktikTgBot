@@ -34,8 +34,13 @@ public class TelegramBot extends SpringWebhookBot {
 
     @Override
     public BotApiMethod<?> onWebhookUpdateReceived(Update update) {
-        return new SendMessage(update.getMessage().getChatId().toString(), gptService.answer(update.getMessage().getText()));
+        SendMessage message = new SendMessage();
+        message.setChatId(update.getMessage().getChatId().toString());
+        message.setText("```\n" + gptService.answer(update.getMessage().getText()) + "\n```");
+        message.setParseMode("Markdown"); // Включаем поддержку Markdown
+        return message;
     }
+
 
     @Override
     public String getBotUsername() {
