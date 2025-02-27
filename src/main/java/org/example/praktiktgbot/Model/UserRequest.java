@@ -19,8 +19,12 @@ public class UserRequest {
     private Long id;
 
     private Long chatId;
+    @Column(columnDefinition = "TEXT")
     private String message;
+
+    @Column(columnDefinition = "TEXT")
     private String response;
+
     private LocalDateTime timestamp;
 
     public UserRequest() {}

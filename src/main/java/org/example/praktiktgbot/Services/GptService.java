@@ -54,10 +54,10 @@ public class GptService {
                 JsonObject jsonResponse = JsonParser.parseString(response.body()).getAsJsonObject();
                 return jsonResponse.get("text").getAsString();
             } else {
-                return "Ошибка: " + response.statusCode() + "\nОтвет API: " + response.body();
+                return "Помилка: " + response.statusCode() + "\nВідповідь API: " + response.body();
             }
         } catch (Exception e) {
-            return "Ошибка соединения: " + e.getMessage();
+            return "Помилка з'єднання: " + e.getMessage();
         }
     }
 }

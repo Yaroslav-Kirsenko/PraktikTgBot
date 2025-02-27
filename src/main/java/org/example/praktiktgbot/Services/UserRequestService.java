@@ -27,7 +27,7 @@ public class UserRequestService {
         List<UserRequest> requests = repository.findTop5ByChatIdOrderByTimestampDesc(chatId);
 
         if (requests.isEmpty()) {
-            return "История сообщений пуста.";
+            return "Історія повідомлень порожня";
         }
 
         return requests.stream()

@@ -1,97 +1,139 @@
 package org.example.praktiktgbot.Services;
+
 import org.example.praktiktgbot.Entity.TelegramProperties;
 import org.example.praktiktgbot.Entity.WebhookProperties;
 import org.springframework.stereotype.Service;
-import org.telegram.telegrambots.bots.TelegramLongPollingBot;
-import org.telegram.telegrambots.meta.TelegramBotsApi;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.starter.SpringWebhookBot;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class TelegramBot extends SpringWebhookBot {
 
     private final TelegramProperties telegramProperties;
-
     private final WebhookProperties webhookProperties;
-
     private final GptService gptService;
-
     private final UserRequestService userRequestService;
+
+    // Хранение состояний пользователей (ожидаем ли вопрос к ИИ)
+    private final Map<Long, Boolean> waitingForQuestion = new HashMap<>();
+    private final SetWebhook setWebhook;
 
     public TelegramBot(TelegramProperties telegramProperties,
                        WebhookProperties webhookProperties,
-                       SetWebhook setWebhook,
-                       GptService gptService, UserRequestService userRequestService) {
+                       GptService gptService,
+                       UserRequestService userRequestService, SetWebhook setWebhook) {
         super(setWebhook, telegramProperties.getToken());
         this.telegramProperties = telegramProperties;
         this.webhookProperties = webhookProperties;
         this.gptService = gptService;
         this.userRequestService = userRequestService;
+        this.setWebhook = setWebhook;
     }
-
-//    @Override
-//    public BotApiMethod<?> onWebhookUpdateReceived(Update update) {
-//
-//        Long chatId = update.getMessage().getChatId();
-//        String userMessage = update.getMessage().getText();
-//
-//        String botResponse;
-//
-//        if (userMessage.equals("/history")) {
-//            botResponse = userRequestService.getUserHistory(chatId);
-//        } else {
-//            botResponse = gptService.answer(userMessage);
-//            userRequestService.saveRequest(chatId, userMessage, botResponse);
-//        }
-//
-//        SendMessage message = new SendMessage();
-//        message.setChatId(chatId.toString());
-//        message.setText(botResponse);
-//        message.setParseMode("Markdown");
-//
-//        return message;
-//    }
 
     @Override
     public BotApiMethod<?> onWebhookUpdateReceived(Update update) {
-        if (update.getMessage() == null || update.getMessage().getText() == null) {
-            return null; // Игнорируем обновления без сообщений
+        if (!update.hasMessage() || !update.getMessage().hasText()) {
+            return null; // Игнорируем обновления без текста
         }
 
         Long chatId = update.getMessage().getChatId();
-        String userMessage = update.getMessage().getText();
+        String userMessage = update.getMessage().getText().trim();
         String botResponse;
 
-        if (userMessage.equals("/history")) {
-            botResponse = userRequestService.getUserHistory(chatId);
-            System.out.println("История для " + chatId + ": " + botResponse); // Отладка
+        if (waitingForQuestion.getOrDefault(chatId, false)) {
+            if (userMessage.equals("/stopask")) {
+                botResponse = "Ви вийшли з режиму питань до AI.";
+                waitingForQuestion.put(chatId, false);
+            } else {
+                botResponse = gptService.answer(userMessage);
+                if (botResponse == null || botResponse.isEmpty()) {
+                    botResponse = "Виникла помилка при обробці запиту.";
+                }
+                userRequestService.saveRequest(chatId, userMessage, botResponse);
+            }
         } else {
-            botResponse = gptService.answer(userMessage);
-            String savedMessage = userMessage.length() > 255 ? userMessage.substring(0, 255) : userMessage;
-            String savedResponse = botResponse.length() > 255 ? botResponse.substring(0, 255) : botResponse;
-            userRequestService.saveRequest(chatId, savedMessage, savedResponse);
+            switch (userMessage) {
+                case "/start":
+                    botResponse = "Привіт! Я бот-помічник. Чим можу допомогти?";
+                    break;
+
+                case "/help":
+                    botResponse = """
+                            Ось що я вмію:
+                            📌 /start - Запуск
+                            🧠 /ask - Питання AI (включає режим)
+                            ⛔ /stopask - Вийти з режиму AI
+                            📅 /schedule - Розклад
+                            📜 /history - Історія запитів
+                            """;
+                    break;
+
+                case "/ask":
+                    botResponse = "Введіть ваше запитання для AI. Щоб вийти, напишіть /stopask";
+                    waitingForQuestion.put(chatId, true);
+                    break;
+
+
+                case "/stopask":
+                    botResponse = "Ви не в режимі запитань до AI.";
+                    break;
+
+                case "/history":
+                    botResponse = userRequestService.getUserHistory(chatId);
+                    if (botResponse == null || botResponse.isEmpty()) {
+                        botResponse = "Історія порожня чи недоступна.";
+                    }
+                    break;
+
+                case "/stop":
+                    botResponse = "Бот зупинено. Ви можете перезапустити його командою /start.";
+                    break;
+                default:
+                    botResponse = "Я не розумію цієї команди. Введіть /help для списку доступних команд.";
+                    break;
+            }
         }
 
-        if (botResponse == null || botResponse.isEmpty()) {
-            botResponse = "История пуста или недоступна.";
-        }
+        return createMessage(chatId, botResponse);
+    }
 
-        SendMessage message = new SendMessage(chatId.toString(), botResponse);
+    private SendMessage createMessage(Long chatId, String text) {
+        SendMessage message = new SendMessage(chatId.toString(), text);
         message.setParseMode("Markdown");
+
+        // Настраиваем клавиатуру
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        keyboardMarkup.setResizeKeyboard(true);
+        keyboardMarkup.setOneTimeKeyboard(false);
+
+        KeyboardRow row1 = new KeyboardRow(List.of(
+                new KeyboardButton("/ask"),
+                new KeyboardButton("/stopask")
+        ));
+        KeyboardRow row2 = new KeyboardRow(List.of(
+                new KeyboardButton("/history"),
+                new KeyboardButton("/help")
+        ));
+        KeyboardRow row3 = new KeyboardRow(List.of(
+                new KeyboardButton("/start"),
+                new KeyboardButton("/stop")
+        ));
+
+        keyboardMarkup.setKeyboard(List.of(row1, row2, row3));
+        message.setReplyMarkup(keyboardMarkup);
 
         return message;
     }
-
-
-
-
-
-
-
 
     @Override
     public String getBotUsername() {
@@ -102,5 +144,4 @@ public class TelegramBot extends SpringWebhookBot {
     public String getBotPath() {
         return webhookProperties.getPath();
     }
-
 }
