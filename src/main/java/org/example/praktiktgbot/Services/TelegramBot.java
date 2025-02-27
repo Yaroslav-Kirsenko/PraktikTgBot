@@ -2,6 +2,7 @@ package org.example.praktiktgbot.Services;
 
 import org.example.praktiktgbot.Entity.TelegramProperties;
 import org.example.praktiktgbot.Entity.WebhookProperties;
+import org.example.praktiktgbot.Model.LessonSchedule;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -12,6 +13,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.starter.SpringWebhookBot;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +25,7 @@ public class TelegramBot extends SpringWebhookBot {
     private final WebhookProperties webhookProperties;
     private final GptService gptService;
     private final UserRequestService userRequestService;
+    private final LessonScheduleService lessonScheduleService;
 
     // Хранение состояний пользователей (ожидаем ли вопрос к ИИ)
     private final Map<Long, Boolean> waitingForQuestion = new HashMap<>();
@@ -31,12 +34,14 @@ public class TelegramBot extends SpringWebhookBot {
     public TelegramBot(TelegramProperties telegramProperties,
                        WebhookProperties webhookProperties,
                        GptService gptService,
-                       UserRequestService userRequestService, SetWebhook setWebhook) {
+                       UserRequestService userRequestService, LessonScheduleService lessonScheduleService,
+                       SetWebhook setWebhook) {
         super(setWebhook, telegramProperties.getToken());
         this.telegramProperties = telegramProperties;
         this.webhookProperties = webhookProperties;
         this.gptService = gptService;
         this.userRequestService = userRequestService;
+        this.lessonScheduleService = lessonScheduleService;
         this.setWebhook = setWebhook;
     }
 
@@ -48,7 +53,7 @@ public class TelegramBot extends SpringWebhookBot {
 
         Long chatId = update.getMessage().getChatId();
         String userMessage = update.getMessage().getText().trim();
-        String botResponse;
+        String botResponse = "";
 
         if (waitingForQuestion.getOrDefault(chatId, false)) {
             if (userMessage.equals("/stopask")) {
@@ -75,6 +80,7 @@ public class TelegramBot extends SpringWebhookBot {
                             ⛔ /stopask - Вийти з режиму AI
                             📅 /schedule - Розклад
                             📜 /history - Історія запитів
+                            ⛔ /stop - Зупинити бота
                             """;
                     break;
 
@@ -87,6 +93,15 @@ public class TelegramBot extends SpringWebhookBot {
                 case "/stopask":
                     botResponse = "Ви не в режимі запитань до AI.";
                     break;
+
+                case "/schedule":
+                    botResponse = lessonScheduleService.getScheduleForDate(String.valueOf(LocalDateTime.now()));
+                    System.out.println(botResponse);
+                    if (botResponse == null || botResponse.isEmpty()) {
+                        botResponse = "Розклад порожній чи недоступний.";
+                    }
+                    break;
+
 
                 case "/history":
                     botResponse = userRequestService.getUserHistory(chatId);
